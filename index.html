@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="拍球计数器" />
+<meta name="theme-color" content="#101418" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+<meta name="theme-color" content="#101418" />
+<title>拍球计数器</title>
+<style>
+  :root{
+    --bg:#101418; --card:#1b2129; --text:#f2f5f7; --muted:#9aa7b2;
+    --accent:#ff9f1c; --green:#2ec4b6; --red:#ff5964; --btn:#232c36;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    display:flex; flex-direction:column; align-items:center;
+    min-height:100vh; padding:28px 16px 48px; touch-action:manipulation;
+  }
+  h1{ font-size:20px; margin:0; font-weight:700; }
+  .sub{ color:var(--muted); font-size:13px; margin:6px 0 18px; }
+  #count{
+    font-size:118px; font-weight:800; line-height:1; margin:6px 0 2px;
+    font-variant-numeric:tabular-nums; user-select:none; -webkit-user-select:none;
+    transition:transform .09s ease, color .09s ease;
+  }
+  #count.hit{ transform:scale(1.14); color:var(--accent); }
+  #status{
+    min-height:22px; font-size:14px; color:var(--muted); margin-bottom:14px; text-align:center;
+    max-width:420px;
+  }
+  #status.live{ color:var(--green); }
+  #meter{ position:relative; height:14px; width:100%; max-width:420px; background:#262e38;
+    border-radius:7px; overflow:hidden; margin-bottom:6px; }
+  #bar{ height:100%; width:0%;
+    background:linear-gradient(90deg,var(--green),var(--accent)); transition:width .05s linear; }
+  #mark{ position:absolute; top:0; bottom:0; left:66.6%; width:2px; background:var(--red); }
+  .meter-label{ font-size:11px; color:var(--muted); margin-bottom:18px; }
+  .btns{ display:grid; grid-template-columns:1fr 1fr; gap:10px; width:100%; max-width:420px; }
+  button{
+    font-size:17px; font-weight:700; color:var(--text); background:var(--btn);
+    border:1px solid #33404d; border-radius:14px; padding:16px 0; cursor:pointer;
+  }
+  button:disabled{ opacity:.35; cursor:default; }
+  button.primary{ background:var(--accent); border-color:var(--accent); color:#1a1206; }
+  button.danger{ border-color:var(--red); color:var(--red); }
+  .stats{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; width:100%; max-width:420px; margin:18px 0 6px; }
+  .stat{ background:var(--card); border-radius:12px; padding:10px 4px; text-align:center; }
+  .stat .v{ font-size:22px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .stat .k{ font-size:11px; color:var(--muted); margin-top:2px; }
+  details{ width:100%; max-width:420px; background:var(--card); border-radius:12px; padding:12px 14px; margin-top:10px; }
+  summary{ font-size:15px; font-weight:700; cursor:pointer; }
+  .row{ display:flex; align-items:center; gap:10px; margin-top:12px; font-size:14px; }
+  .row label{ flex:0 0 86px; color:var(--muted); }
+  .row input[type=range]{ flex:1; accent-color:var(--accent); }
+  .row select,.row input[type=number]{
+    flex:1; font-size:15px; color:var(--text); background:var(--btn);
+    border:1px solid #33404d; border-radius:8px; padding:8px;
+  }
+  #thrVal{ flex:0 0 46px; text-align:right; font-weight:700; color:var(--accent); }
+  .mini{ margin-top:12px; display:flex; gap:10px; }
+  .mini button{ flex:1; font-size:14px; font-weight:600; padding:10px 0; }
+  .hints{ width:100%; max-width:420px; margin-top:18px; font-size:13px; color:var(--muted); line-height:1.7; }
+  .hints b{ color:var(--text); }
+</style>
+</head>
+<body>
+  <h1>🏀 拍球计数器</h1>
+  <div class="sub">手机听声自动计数 · 到点语音播报</div>
+
+  <div id="count">0</div>
+  <div id="status">点击「开始计数」，并允许使用麦克风</div>
+
+  <div id="meter"><div id="bar"></div><div id="mark"></div></div>
+  <div class="meter-label" id="meterLabel">能量条（红线=触发阈值，拍球时能量条应冲过红线）</div>
+
+  <div class="btns">
+    <button id="btnStart" class="primary">开始计数</button>
+    <button id="btnPause" disabled>暂停</button>
+    <button id="btnStop" class="danger" disabled>结束</button>
+    <button id="btnReset">重置</button>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="v" id="statTime">00:00</div><div class="k">用时</div></div>
+    <div class="stat"><div class="v" id="statRate">0</div><div class="k">个/分钟</div></div>
+    <div class="stat"><div class="v" id="statBest">0</div><div class="k">历史最高</div></div>
+  </div>
+
+  <details open>
+    <summary>设置</summary>
+    <div class="row">
+      <label>触发阈值</label>
+      <input type="range" id="thr" min="2" max="20" step="0.5" value="6" />
+      <span id="thrVal">×6.0</span>
+    </div>
+    <div class="row">
+      <label>播报间隔</label>
+      <select id="announce">
+        <option value="1" selected>每一个都播报</option>
+        <option value="10">每 10 个播报</option>
+        <option value="20">每 20 个播报</option>
+        <option value="50">每 50 个播报</option>
+        <option value="100">每 100 个播报</option>
+        <option value="0">只在结束时播报总数</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>目标数</label>
+      <input type="number" id="target" min="1" placeholder="选填，例如 100" />
+    </div>
+    <div class="mini">
+      <button id="btnTestVoice">测试播报声音</button>
+      <button id="btnCopy">复制本页链接</button>
+    </div>
+  </details>
+
+  <div class="hints">
+    <b>使用方法：</b>把手机放在球旁边 1–2 米的地面上，麦克风朝向拍球位置 → 点「开始计数」→ 开始后约 1 秒适应环境噪声，请先不要拍球。<br/>
+    <b>调参：</b>拍球没反应 → 把触发阈值调小；说话/脚步声被误计 → 调大。能量条冲过红线即计数。<br/>
+    <b>音色校验：</b>已开启。起振太慢、音调太高、或声音持续不衰减（说话声）会被自动过滤，过滤次数显示在能量条下方。<br/>
+    <b>浊音否决：</b>已开启。旁边人说话的元音有强周期性，球落地冲击没有——检出周期即否决，可挡住短促感叹词等漏网人声。<br/>
+    <b>防回声：</b>已开启回声消除；每次播报后短暂抑制检测，避免手机自己的报数声被重复计数。<br/>
+    <b>注意：</b>App 内嵌页面（如 Muse App 内打开）可能没有麦克风权限、也播不出声音——麦克风和「测试播报声音」请都在系统 Safari 里试。如在 App 内打不开麦克风，请用「复制本页链接」到系统 Safari 里打开；iOS 上首次播报需要点过「开始计数」或「测试播报声音」，并确认手机没开静音、音量已调大。
+  </div>
+
+<script>
+(function(){
+'use strict';
+// detector-core.js
+// 拍球检测核心：纯逻辑，不依赖 DOM / Web Audio，可在 Node 下单测。
+// 输入：每帧低频带(60~320Hz)平均功率（线性值）+ 可选的频谱质心；输出：是否判定为一次拍球。
+// 三级判定：
+//   ① 能量门：能量超过自适应环境基线 × 阈值倍数；
+//   ② 初检（方案A）：起振时间 + 频谱质心，过滤慢起振 / 高音调杂音；
+//   ③ 衰减校验：初检通过后挂起 150ms，窗内最低能量仍高于峰值×比例 → 持续音（如说话声），过滤。
+//      球声是冲击后快速衰减的，说话声的元音段会持续 —— 这是区分两者的关键。
+//   ④ 浊音否决：对候选窗做归一化自相关，检出强周期（浊音语音的元音）→ 否决。
+//      短促感叹词能过③，但过不了④；球落地是噪声样瞬态，无周期。
+class BounceDetector {
+  constructor(opts) {
+    opts = opts || {};
+    this.minIntervalMs = opts.minIntervalMs != null ? opts.minIntervalMs : 200; // 两次拍球最小间隔
+    this.ratio = opts.ratio != null ? opts.ratio : 4.0;                          // 触发倍数：能量 > 基线*ratio
+    this.absMin = opts.absMin != null ? opts.absMin : 1e-9;                      // 绝对下限，防数字静默误触
+    this.warmupFrames = opts.warmupFrames != null ? opts.warmupFrames : 60;      // 启动后前 N 帧只学环境不计数
+    this.maxAttackMs = opts.maxAttackMs != null ? opts.maxAttackMs : 45;         // 起振上限：超过则视为慢起振（如说话声）过滤掉
+    this.centroidLo = opts.centroidLo != null ? opts.centroidLo : 80;             // 频谱质心允许下限(Hz)
+    this.centroidHi = opts.centroidHi != null ? opts.centroidHi : 800;           // 频谱质心允许上限(Hz)
+    this.histMs = opts.histMs != null ? opts.histMs : 150;                       // 起振测量用的能量历史窗口
+    this.decayCheckMs = opts.decayCheckMs != null ? opts.decayCheckMs : 150;     // 衰减观察窗：候选出现后多看这么久再裁决
+    this.decayRatio = opts.decayRatio != null ? opts.decayRatio : 0.4;           // 窗内最低能量仍高于峰值×此比例 → 持续音，过滤
+    this.voicingVeto = opts.voicingVeto != null ? opts.voicingVeto : 0.85;      // 浊音否决阈值：候选窗归一化自相关峰值超过此值 → 浊音语音，否决
+    this.voicingLagLoHz = opts.voicingLagLoHz != null ? opts.voicingLagLoHz : 70;   // 周期检测下限(Hz)：覆盖成人/儿童基频
+    this.voicingLagHiHz = opts.voicingLagHiHz != null ? opts.voicingLagHiHz : 400;  // 周期检测上限(Hz)
+    this.tdSampleRate = opts.tdSampleRate != null ? opts.tdSampleRate : 48000;  // 时域采样率（页面按 AudioContext.sampleRate 设置）
+    this.tdKeepMs = opts.tdKeepMs != null ? opts.tdKeepMs : 400;                 // 时域 ring buffer 保留时长，需覆盖衰减观察窗
+    this.reset();
+  }
+  reset() {
+    this.floor = null; // 环境基线（慢适应）
+    this.frames = 0;
+    this.lastTriggerMs = -Infinity;
+    this.count = 0;
+    this.hist = [];        // 最近 histMs 内的 {t, e}
+    this.filtered = 0;     // 被音色校验过滤掉的次数（按"段"去重：一段持续超标只计 1 次）
+    this.aboveThr = false;
+    this.pending = null;   // 待裁决的候选 {t0, ePeak, eMin}
+    this.muteUntilMs = 0;  // 在此之前不产生新候选（抑制扬声器回声），基线照常跟踪
+    this.tdFrames = [];    // 时域 ring buffer：{t, buf}，供浊音否决用
+  }
+  setRatio(r) { this.ratio = r; }
+  // 播报开始时调用：muteMs 毫秒内不产生新候选。防止手机扬声器的报数声被麦克风
+  // 拾取、形成"计数→播报→再计数"的死循环。基线/历史照常更新，窗口过后自动恢复。
+  muteUntil(ms) { this.muteUntilMs = Math.max(this.muteUntilMs, ms); }
+  // 暂停时调用：丢弃未裁决的候选，避免用暂停前后的 stale 数据误判
+  cancelPending() { this.pending = null; }
+  // 每帧调用：把时域波形存入 ring buffer，供浊音否决用。不传则跳过（否决门自动失效，不影响旧逻辑）。
+  pushTimeDomain(buf, nowMs) {
+    if (!buf || buf.length === 0) return;
+    this.tdFrames.push({ t: nowMs, buf: Float32Array.from(buf) });
+    while (this.tdFrames.length > 0 && nowMs - this.tdFrames[0].t > this.tdKeepMs) this.tdFrames.shift();
+  }
+  // 取 [tA, tB] 毫秒内的时域采样（按时间拼接各帧），返回普通数组
+  extractSegment(tA, tB) {
+    const sr = this.tdSampleRate;
+    const out = [];
+    for (const f of this.tdFrames) {
+      const n = f.buf.length;
+      const fT0 = f.t - (n / sr) * 1000; // 该帧 buffer 的起始时刻
+      for (let i = 0; i < n; i++) {
+        const st = fT0 + (i / sr) * 1000;
+        if (st >= tA && st <= tB) out.push(f.buf[i]);
+      }
+    }
+    return out;
+  }
+  // 浊音分数：去直流后，归一化自相关在 [voicingLagLoHz, voicingLagHiHz]
+  // 对应滞后区间的峰值。浊音语音（元音）≈0.9+；球落地冲击（噪声样瞬态）≈0.3 以下。
+  voicingScore(x) {
+    const n = x.length;
+    if (n < 64) return 0;
+    let mean = 0;
+    for (let i = 0; i < n; i++) mean += x[i];
+    mean /= n;
+    let e0 = 0;
+    for (let i = 0; i < n; i++) { const v = x[i] - mean; e0 += v * v; }
+    if (!(e0 > 0)) return 0;
+    const sr = this.tdSampleRate;
+    const lagMin = Math.max(1, Math.floor(sr / this.voicingLagHiHz));
+    const lagMax = Math.min(n - 1, Math.ceil(sr / this.voicingLagLoHz));
+    let best = 0;
+    for (let lag = lagMin; lag <= lagMax; lag++) {
+      // 分 lag 的 Pearson 相关：分母只用重叠区能量，否则长滞后（低音）会被系统性压低
+      let s = 0, e1 = 0, e2 = 0;
+      for (let i = 0; i + lag < n; i++) {
+        const a = x[i] - mean, b = x[i + lag] - mean;
+        s += a * b; e1 += a * a; e2 += b * b;
+      }
+      const denom = Math.sqrt(e1 * e2);
+      const r = denom > 0 ? s / denom : 0;
+      if (r > best) best = r;
+    }
+    return best;
+  }
+  // 起振时间：能量从最后一次 ≤30% 峰值涨到当前值的时间（ms）。
+  // 拍球是毫秒级冲击（约 1 帧），说话声是几十毫秒爬升。
+  attackTime(nowMs, peak) {
+    const lo = peak * 0.3;
+    for (let i = this.hist.length - 1; i >= 0; i--) {
+      if (this.hist[i].e <= lo) return nowMs - this.hist[i].t;
+    }
+    if (this.hist.length === 0) return 0;
+    const span = nowMs - this.hist[0].t;
+    return span < this.maxAttackMs ? 0 : span; // 历史不足一窗：放行，避免启动伪影
+  }
+  // energy: 当前帧低频带平均功率；nowMs: 毫秒时间戳；
+  // centroidHz: 可选，60~2000Hz 频谱质心。不传则只做能量门（兼容旧行为）。
+  // timeBuf: 可选，本帧时域波形（Float32Array/Array），用于浊音否决；不传则该门自动失效。
+  // 返回 true 表示检测到一次拍球（注意：传质心时裁决会延迟约 decayCheckMs）。
+  process(energy, nowMs, centroidHz, timeBuf) {
+    this.frames += 1;
+    if (timeBuf) this.pushTimeDomain(timeBuf, nowMs);
+    this.hist.push({ t: nowMs, e: energy });
+    while (this.hist.length > 0 && nowMs - this.hist[0].t > this.histMs) this.hist.shift();
+    if (this.floor === null || !(this.floor > 0)) this.floor = Math.max(energy, 1e-12);
+    const warming = this.frames <= this.warmupFrames;
+    // 基线跟踪：预热期快速学习；之后能量远高于基线时慢速上跟（不被拍球声带跑），
+    // 能量接近/低于基线时较快下跟（适应环境变安静）。
+    const alpha = warming ? 0.25 : (energy > this.floor * 1.5 ? 0.002 : 0.03);
+    this.floor += (energy - this.floor) * alpha;
+    if (warming) { this.aboveThr = false; this.pending = null; return false; }
+    // 回声抑制窗内：不产生新候选、不裁决（基线与历史已在上面正常更新）
+    if (nowMs < this.muteUntilMs) return false;
+    const threshold = Math.max(this.floor * this.ratio, this.absMin);
+    // 先裁决挂起的候选
+    if (this.pending) {
+      const pd = this.pending;
+      // 窗内最低能量：跳开头 40ms（避开冲击峰本身），到观察窗结束
+      if (nowMs > pd.t0 + 40 && nowMs <= pd.t0 + this.decayCheckMs && energy < pd.eMin) pd.eMin = energy;
+      if (nowMs >= pd.t0 + this.decayCheckMs) {
+        this.pending = null;
+        if (pd.eMin > pd.ePeak * this.decayRatio) {
+          this.filtered += 1; // 持续音（如说话声）：过滤，不锁定不应期
+          this.aboveThr = true;
+          return false;
+        }
+        // 浊音否决：候选窗 [t0+40, t0+150] 内若检出强周期 → 浊音语音（如短促感叹词），否决。
+        // 球落地是噪声样瞬态，无周期；无时域数据时该门自动跳过（兼容旧逻辑）。
+        const seg = this.extractSegment(pd.t0 + 40, pd.t0 + this.decayCheckMs);
+        if (seg.length >= this.tdSampleRate * 0.05 && this.voicingScore(seg) > this.voicingVeto) {
+          this.filtered += 1; // 浊音（如说话声）：过滤，不锁定不应期
+          this.aboveThr = true;
+          return false;
+        }
+        this.aboveThr = true;
+        this.lastTriggerMs = nowMs;
+        this.count += 1;
+        return true;
+      }
+      return false; // 窗内：等裁决，不产生新候选
+    }
+    if (energy <= threshold) { this.aboveThr = false; return false; }
+    if ((nowMs - this.lastTriggerMs) < this.minIntervalMs) return false;
+    // 音色初检：起振太慢 → 说话声之类；质心太高 → 高音调杂音
+    if (typeof centroidHz === 'number') {
+      const badAttack = this.attackTime(nowMs, energy) > this.maxAttackMs;
+      const badCentroid = centroidHz < this.centroidLo || centroidHz > this.centroidHi;
+      if (badAttack || badCentroid) {
+        if (!this.aboveThr) this.filtered += 1;
+        this.aboveThr = true;
+        return false; // 不锁定不应期，允许后续帧用更完整的频谱再判定
+      }
+      // 初检通过 → 挂起，观察窗后看衰减再裁决（持续说话声会被这一步拦下）
+      this.pending = { t0: nowMs, ePeak: energy, eMin: Infinity };
+      this.aboveThr = true;
+      return false;
+    }
+    this.aboveThr = true;
+    this.lastTriggerMs = nowMs;
+    this.count += 1;
+    return true;
+  }
+}
+if (typeof module !== 'undefined' && module.exports) { module.exports = { BounceDetector }; }
+
+
+var $ = function(id){ return document.getElementById(id); };
+var ui = {
+  count: $('count'), status: $('status'), bar: $('bar'), meterLabel: $('meterLabel'),
+  btnStart: $('btnStart'), btnPause: $('btnPause'), btnStop: $('btnStop'), btnReset: $('btnReset'),
+  thr: $('thr'), thrVal: $('thrVal'), announce: $('announce'), target: $('target'),
+  statTime: $('statTime'), statRate: $('statRate'), statBest: $('statBest'),
+  btnTestVoice: $('btnTestVoice'), btnCopy: $('btnCopy')
+};
+
+var AC = null, analyser = null, stream = null, freqBuf = null, timeBuf = null, rafId = 0, detector = null;
+var state = 'idle';           // idle | warming | running | paused | done
+var count = 0, accMs = 0, segStart = 0, warmUntil = 0;
+var wakeLock = null, statTimer = 0;
+
+function thresholdRatio(){ return parseFloat(ui.thr.value); }
+function elapsedMs(){ return accMs + (segStart ? performance.now() - segStart : 0); }
+function fmtTime(ms){
+  var s = Math.floor(ms / 1000);
+  var m = Math.floor(s / 60); s = s % 60;
+  return (m < 10 ? '0' + m : m) + ':' + (s < 10 ? '0' + s : s);
+}
+function setStatus(t, live){
+  ui.status.textContent = t;
+  ui.status.className = live ? 'live' : '';
+  ui.status.id = 'status';
+}
+function updateCount(){ ui.count.textContent = count; }
+function renderStats(){
+  var ms = elapsedMs();
+  ui.statTime.textContent = fmtTime(ms);
+  var mins = ms / 60000;
+  ui.statRate.textContent = mins > 0.02 ? Math.round(count / mins) : 0;
+  ui.statBest.textContent = localStorage.getItem('bounce_best') || '0';
+  var filt = detector ? detector.filtered : 0;
+  ui.meterLabel.textContent = '能量条（红线=触发阈值，拍球时能量条应冲过红线）' +
+    (filt > 0 ? ' · 已过滤杂音 ' + filt + ' 次' : '');
+}
+function setButtons(){
+  ui.btnStart.disabled = (state === 'warming' || state === 'running' || state === 'paused');
+  ui.btnPause.disabled = !(state === 'running' || state === 'paused');
+  ui.btnPause.textContent = state === 'paused' ? '继续' : '暂停';
+  ui.btnStop.disabled = !(state === 'running' || state === 'paused' || state === 'warming');
+  ui.btnReset.disabled = (state === 'warming' || state === 'running' || state === 'paused');
+}
+var speechQ = [], speaking = false;
+function speak(text){
+  try{
+    if(!('speechSynthesis' in window)) return;
+    speechQ.push(text);
+    if(speechQ.length > 3) speechQ = speechQ.slice(-3); // 限流：拍太快时只保留最近 3 条，避免播报越拖越远
+    pumpSpeech();
+  }catch(e){}
+}
+function pumpSpeech(){
+  if(speaking) return;
+  var t = speechQ.shift();
+  if(t === undefined) return;
+  try{
+    speaking = true;
+    var u = new SpeechSynthesisUtterance(t);
+    u.lang = 'zh-CN'; u.rate = 1.1; u.pitch = 1.7; // 卡通感：提高音调（iOS 只有系统音色，这是唯一手段）
+    var finished = false, timer = 0;
+    var advance = function(){
+      if(finished) return; finished = true;
+      if(timer) clearTimeout(timer);
+      speaking = false;
+      setTimeout(pumpSpeech, 0);
+    };
+    u.onend = advance;
+    u.onerror = advance;
+    timer = setTimeout(advance, 5000); // 兜底：防止某次播报卡住导致后续无声
+    try{ if(detector) detector.muteUntil(performance.now() + 250); }catch(e){} // 播报后 250ms 内不产生新候选：盖住 TTS 起声与回声消除收敛前的窗口
+    window.speechSynthesis.speak(u);
+  }catch(e){ speaking = false; }
+}
+function cancelSpeech(){
+  speechQ = [];
+  try{ if('speechSynthesis' in window) window.speechSynthesis.cancel(); }catch(e){}
+  speaking = false;
+}
+// iOS 要求 speechSynthesis.speak 发生在用户手势的同步调用栈内，否则会被静默拦截。
+// 在"开始计数"点击的最开头（任何 await 之前）同步播一句，既解锁语音又播报开始。
+function primeSpeech(){
+  cancelSpeech();
+  speak('开始计数');
+}
+function micErrText(err){
+  var n = err && err.name ? err.name : '';
+  if(n === 'NotAllowedError') return '麦克风权限被拒绝。请检查：1) 点 Safari 地址栏左侧按钮 → 网站设置 → 麦克风 → 改为"允许"；2) iPhone 设置 → Safari → 麦克风 → 改为"询问"或"允许"。改完后刷新页面再点开始计数';
+  if(n === 'NotFoundError') return '找不到麦克风设备';
+  if(n === 'NotSupportedError' || n === 'SecurityError') return '当前环境不支持麦克风（需要 HTTPS / 系统浏览器）';
+  return '未知错误(' + n + ')';
+}
+
+async function start(){
+  if(state === 'running' || state === 'warming' || state === 'paused') return;
+  primeSpeech(); // 同步发生在点击手势内：解锁 iOS 语音播报
+  ui.btnStart.disabled = true;
+  var ok = true;
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({
+      // echoCancellation 必须开：否则扬声器的报数声会被麦克风拾取，
+      // 形成"计数→播报→再计数"的死循环。noiseSuppression / autoGainControl
+      // 保持关闭，避免损伤拍球瞬态、干扰自适应基线。
+      audio:{ echoCancellation:true, noiseSuppression:false, autoGainControl:false }
+    });
+  }catch(err){ setStatus('无法使用麦克风：' + micErrText(err) + '若在 App 内嵌页面中打开，请用分享菜单转到系统 Safari。'); ok = false; }
+  if(!ok){ cancelSpeech(); ui.btnStart.disabled = false; return; }
+  try{
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    AC = new Ctx();
+    if(AC.state === 'suspended'){ await AC.resume(); }
+    var src = AC.createMediaStreamSource(stream);
+    analyser = AC.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0;
+    src.connect(analyser);
+    freqBuf = new Float32Array(analyser.frequencyBinCount);
+    timeBuf = new Float32Array(analyser.fftSize); // 时域波形，供浊音否决门用
+  }catch(err){
+    setStatus('音频初始化失败：' + (err && err.message ? err.message : err));
+    cancelSpeech(); cleanupAudio(); ui.btnStart.disabled = false; return;
+  }
+  detector = new BounceDetector({ ratio: thresholdRatio(), minIntervalMs: 200, warmupFrames: 60 });
+  detector.tdSampleRate = AC.sampleRate; // 浊音否决门需要真实采样率
+  count = 0; accMs = 0; segStart = performance.now();
+  state = 'warming'; warmUntil = performance.now() + 1000;
+  updateCount(); renderStats();
+  setStatus('正在适应环境噪声，请稍候…');
+  try{ if('wakeLock' in navigator){ wakeLock = await navigator.wakeLock.request('screen'); } }catch(e){}
+  setButtons();
+  statTimer = setInterval(renderStats, 500);
+  rafId = requestAnimationFrame(tick);
+}
+
+function tick(){
+  if(state !== 'running' && state !== 'warming'){ return; }
+  analyser.getFloatFrequencyData(freqBuf);
+  var binHz = AC.sampleRate / analyser.fftSize;
+  var lo = Math.max(1, Math.floor(60 / binHz));
+  var hi = Math.min(freqBuf.length - 1, Math.ceil(320 / binHz));
+  var p = 0, n = 0;
+  for(var i = lo; i <= hi; i++){
+    var db = freqBuf[i];
+    if(db > -Infinity){ p += Math.pow(10, db / 10); n++; }
+  }
+  p = n ? p / n : 0;
+  // 频谱质心（60~2000Hz）：拍球是低频闷响（质心低），说话/高音调杂音质心高
+  var cLo = Math.max(1, Math.floor(60 / binHz));
+  var cHi = Math.min(freqBuf.length - 1, Math.ceil(2000 / binHz));
+  var cNum = 0, cDen = 0;
+  for(var j = cLo; j <= cHi; j++){
+    var cdb = freqBuf[j];
+    if(cdb > -Infinity){ var cpw = Math.pow(10, cdb / 10); cNum += (j * binHz) * cpw; cDen += cpw; }
+  }
+  var centroid = cDen > 0 ? cNum / cDen : 0;
+  analyser.getFloatTimeDomainData(timeBuf); // 浊音否决门用：检测候选窗内是否有语音周期性
+  var now = performance.now();
+  if(state === 'warming' && now >= warmUntil){
+    state = 'running'; setStatus('计数中', true); setButtons();
+  }
+  var hit = detector.process(p, now, centroid, timeBuf) && state === 'running';
+  var thr = Math.max(detector.floor * detector.ratio, 1e-12);
+  var frac = Math.min(1, p / (thr * 1.5));
+  ui.bar.style.width = (frac * 100).toFixed(1) + '%';
+  if(hit) onBounce();
+  rafId = requestAnimationFrame(tick);
+}
+
+function onBounce(){
+  count++;
+  updateCount();
+  ui.count.classList.remove('hit');
+  void ui.count.offsetWidth;
+  ui.count.classList.add('hit');
+  var every = parseInt(ui.announce.value, 10) || 0;
+  if(every > 0 && count % every === 0){ speak(String(count)); }
+  var target = parseInt(ui.target.value, 10) || 0;
+  if(target > 0 && count === target){ speak('已达到目标' + target + '次'); }
+}
+
+function pause(){
+  if(state !== 'running') return;
+  accMs += performance.now() - segStart; segStart = 0;
+  state = 'paused';
+  cancelAnimationFrame(rafId);
+  if(detector) detector.cancelPending(); // 丢弃未裁决的候选，避免用暂停前后的数据误判
+  // 注意：这里故意不 suspend AudioContext。iOS 上 suspend 后 resume 经常无法恢复
+  // 麦克风数据流（Analyser 返回冻结帧），导致恢复后识别彻底死亡。只停 rAF 循环即可，
+  // 麦克风保持采集但不再处理，恢复时直接重启循环，数据是实时的。
+  setStatus('已暂停');
+  setButtons();
+}
+function resume(){
+  if(state !== 'paused') return;
+  segStart = performance.now();
+  state = 'running';
+  setStatus('计数中', true);
+  setButtons();
+  rafId = requestAnimationFrame(tick);
+}
+function cleanupAudio(){
+  try{ if(stream){ stream.getTracks().forEach(function(t){ t.stop(); }); } }catch(e){}
+  try{ if(AC){ AC.close(); } }catch(e){}
+  try{ if(wakeLock){ wakeLock.release(); } }catch(e){}
+  stream = null; AC = null; analyser = null; freqBuf = null; timeBuf = null; wakeLock = null;
+}
+function stop(){
+  if(state === 'idle' || state === 'done') return;
+  if(state === 'running' || state === 'warming'){ accMs += performance.now() - segStart; segStart = 0; }
+  cancelAnimationFrame(rafId);
+  clearInterval(statTimer);
+  cleanupAudio();
+  state = 'done';
+  var secs = Math.round(accMs / 1000);
+  var target = parseInt(ui.target.value, 10) || 0;
+  var msg = '本次共拍球' + count + '次，用时' + Math.floor(secs / 60) + '分' + (secs % 60) + '秒';
+  if(target > 0){ msg += count >= target ? '，已达成目标' : '，距离目标还差' + (target - count) + '次'; }
+  setStatus(msg);
+  cancelSpeech(); speak(msg);
+  var best = parseInt(localStorage.getItem('bounce_best') || '0', 10);
+  if(count > best){ try{ localStorage.setItem('bounce_best', String(count)); }catch(e){} }
+  renderStats(); setButtons();
+}
+function resetAll(){
+  if(state === 'warming' || state === 'running' || state === 'paused') return;
+  cancelSpeech();
+  count = 0; accMs = 0; segStart = 0;
+  state = 'idle';
+  updateCount(); renderStats();
+  ui.bar.style.width = '0%';
+  setStatus('点击「开始计数」，并允许使用麦克风');
+  setButtons();
+}
+
+ui.btnStart.addEventListener('click', start);
+ui.btnPause.addEventListener('click', function(){ state === 'paused' ? resume() : pause(); });
+ui.btnStop.addEventListener('click', stop);
+ui.btnReset.addEventListener('click', resetAll);
+ui.thr.addEventListener('input', function(){
+  ui.thrVal.textContent = '×' + thresholdRatio().toFixed(1);
+  if(detector){ detector.setRatio(thresholdRatio()); }
+});
+ui.btnTestVoice.addEventListener('click', function(){ cancelSpeech(); speak('播报测试，一二三'); });
+ui.btnCopy.addEventListener('click', async function(){
+  var done = function(ok){ ui.btnCopy.textContent = ok ? '已复制' : '复制失败'; setTimeout(function(){ ui.btnCopy.textContent = '复制本页链接'; }, 1500); };
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(location.href); done(true);
+    }else{
+      var ta = document.createElement('textarea');
+      ta.value = location.href; document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); document.body.removeChild(ta); done(true);
+    }
+  }catch(e){ done(false); }
+});
+document.addEventListener('visibilitychange', function(){
+  if(document.hidden && state === 'running'){ pause(); setStatus('已暂停（页面被切到后台）'); }
+});
+
+renderStats();
+setButtons();
+// PWA：注册 Service Worker 做离线缓存（GitHub Pages 版；单文件 Artifact 下 sw.js 不存在，静默失败不影响功能）
+try{
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); });
+  }
+}catch(e){}
+})();
+</script>
+</body>
+</html>
